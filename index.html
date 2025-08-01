@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>성화국 법원</title>
+    <!-- Inter 폰트와 Tailwind CSS 로딩 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>
+        // Tailwind CSS 커스텀 설정
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#1e293b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+            color: #1e293b;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        body.dark {
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        html {
+            scroll-behavior: smooth;
+        }
+        #root {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .prose strong {
+            font-weight: bold;
+        }
+        /* 스크롤바 커스터마이징 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        body.dark ::-webkit-scrollbar-track {
+            background: #2d3748;
+        }
+        body.dark ::-webkit-scrollbar-thumb {
+            background: #a0aec0;
+        }
+        /* 재판 일정 페이지 달력 칸 CSS */
+        .calendar-day-cell {
+            position: relative;
+            padding-top: 100%; /* 정사각형 비율 유지 */
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease-in-out;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        body.dark .calendar-day-cell {
+            background-color: #2d3748;
+            border-color: #4a5568;
+        }
+        .calendar-day-content {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 0.5rem;
+        }
+        .calendar-day-number {
+            font-weight: 600;
+            font-size: 1.25rem; /* Large */
+            line-height: 1.75rem;
+            color: #1f2937;
+            margin-bottom: 0.5rem;
+            text-align: left;
+        }
+        body.dark .calendar-day-number {
+            color: #e2e8f0;
+        }
+        .calendar-day-textarea {
+            width: 100%;
+            flex-grow: 1;
+            background: transparent;
+            border: none;
+            resize: none;
+            font-size: 1.125rem; /* Large */
+            line-height: 1.75rem;
+            color: #4b5563;
+            padding-top: 0.5rem;
+            white-space: pre-wrap;
+            font-weight: 500;
+        }
+        body.dark .calendar-day-textarea {
+            color: #a0aec0;
+        }
+        .calendar-day-textarea:focus {
+            outline: none;
+            border-color: transparent;
+        }
+        .today-cell {
+            border: 2px solid #3b82f6;
+            transform: scale(1.05);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, createContext, useContext, useRef } = React;
+
+        // Utility function to format text for HTML rendering
+        const renderFormattedText = (text) => {
+            if (!text) return { __html: '' };
+            let htmlText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            htmlText = htmlText.replace(/\n/g, '<br />');
+            return { __html: htmlText };
+        };
+        
+        // Global state management context
+        const GlobalContext = createContext(null);
+
+        // Footer Component
+        const Footer = () => {
+            const { isDarkMode } = useContext(GlobalContext);
+            return (
+                <footer className="bg-white dark:bg-gray-800 shadow-lg p-6 rounded-t-2xl mt-8 text-center text-gray-600 dark:text-gray-400 transition-colors">
+                    <p>&copy; 2025 Seonghwa Court. All Rights Reserved.</p>
+                    <p className="mt-2">Contact: support@seonghwa.gov</p>
+                </footer>
+            );
+        };
+
+        // Main App Component (router)
+        const App = () => {
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [isLoggingIn, setIsLoggingIn] = useState(false);
+            const [page, setPage] = useState('landing');
+            const [currentUser, setCurrentUser] = useState(null);
+            const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+            const [showLoginModal, setShowLoginModal] = useState(false);
+            const [showToast, setShowToast] = useState({ message: '', visible: false });
+            const [isDarkMode, setIsDarkMode] = useState(() => {
+                const savedMode = localStorage.getItem('isDarkMode');
+                return savedMode === 'true';
+            });
+            const [isAdminMode, setIsAdminMode] = useState(false);
+            
+            const [registeredUsers, setRegisteredUsers] = useState(() => {
+                try {
+                    const savedUsers = localStorage.getItem('registeredUsers');
+                    return savedUsers ? JSON.parse(savedUsers) : [];
+                } catch (error) {
+                    console.error("Failed to load registered users from localStorage", error);
+                    return [];
+                }
+            });
+            
+            const [registeredCases, setRegisteredCases] = useState(() => {
+                try {
+                    const savedCases = localStorage.getItem('registeredCases');
+                    return savedCases ? JSON.parse(savedCases) : [];
+                } catch (error) {
+                    console.error("Failed to load registered cases from localStorage", error);
+                    return [];
+                }
+            });
+            
+            const [judgments, setJudgments] = useState(() => {
+                try {
+                    const savedJudgments = localStorage.getItem('judgments');
+                    const initialJudgments = savedJudgments ? JSON.parse(savedJudgments) : [];
+                    localStorage.setItem('judgments', JSON.stringify(initialJudgments));
+                    return initialJudgments;
+                } catch (error) {
+                    console.error("Failed to load judgments from localStorage", error);
+                    return [];
+                }
+            });
+            
+            // Set initial state on page load
+            useEffect(() => {
+                const savedStatus = localStorage.getItem('isLoggedIn');
+                const savedUser = localStorage.getItem('currentUser');
+                if (savedStatus === 'true' && savedUser) {
+                    setIsLoggedIn(true);
+                    setCurrentUser(JSON.parse(savedUser));
+                    setPage('main');
+                }
+                const savedAdminMode = localStorage.getItem('isAdminMode');
+                if (savedAdminMode === 'true') {
+                    setIsAdminMode(true);
+                    setPage('admin-dashboard');
+                }
+            }, []);
+
+            // Save login status and user info to LocalStorage
+            useEffect(() => {
+                localStorage.setItem('isLoggedIn', isLoggedIn);
+                if (isLoggedIn && currentUser) {
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                } else {
+                    localStorage.removeItem('currentUser');
+                }
+            }, [isLoggedIn, currentUser]);
+            
+            // Save admin mode status to LocalStorage
+            useEffect(() => {
+                localStorage.setItem('isAdminMode', isAdminMode);
+            }, [isAdminMode]);
+
+            // Save dark mode status to LocalStorage
+            useEffect(() => {
+                localStorage.setItem('isDarkMode', isDarkMode);
+                if (isDarkMode) {
+                    document.body.classList.add('dark');
+                } else {
+                    document.body.classList.remove('dark');
+                }
+            }, [isDarkMode]);
+
+            // Save registered users to LocalStorage
+            useEffect(() => {
+                localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+            }, [registeredUsers]);
+            
+            // Save registered cases to LocalStorage
+            useEffect(() => {
+                localStorage.setItem('registeredCases', JSON.stringify(registeredCases));
+            }, [registeredCases]);
+
+            // Save judgments to LocalStorage
+            useEffect(() => {
+                localStorage.setItem('judgments', JSON.stringify(judgments));
+            }, [judgments]);
+
+            const handleLogin = (credentials) => {
+                setIsLoggingIn(true);
+                const user = registeredUsers.find(
+                    u => u.id === credentials.id && u.password === credentials.password
+                );
+                setTimeout(() => {
+                    setIsLoggingIn(false);
+                    if (user) {
+                        setIsLoggedIn(true);
+                        setCurrentUser(user);
+                        setPage('main');
+                        showToastMessage('로그인에 성공했습니다.');
+                        setShowLoginModal(false);
+                    } else {
+                        showToastMessage('아이디 또는 비밀번호가 올바르지 않습니다.');
+                    }
+                }, 1500); // Simulate loading
+            };
+
+            const handleAdminLogin = (credentials) => {
+                if (credentials.id === 'SHGSBB0601' && credentials.password === 'SHGSBBSHGSBB') {
+                    setIsLoggedIn(true);
+                    setIsAdminMode(true);
+                    setShowAdminLoginModal(false);
+                    showToastMessage('관리자 모드가 활성화되었습니다.');
+                    setPage('admin-dashboard');
+                } else {
+                    showToastMessage('아이디 또는 비밀번호가 올바르지 않습니다.');
+                }
+            };
+
+            const handleLogout = () => {
+                setIsLoggedIn(false);
+                setCurrentUser(null);
+                setIsAdminMode(false);
+                setPage('landing');
+                showToastMessage('로그아웃되었습니다.');
+            };
+            
+            // Exit admin mode
+            const handleAdminExit = () => {
+                setIsAdminMode(false);
+                setPage('main');
+            };
+
+            const handleRegistration = (user) => {
+                const existingUser = registeredUsers.find(u => u.id === user.id);
+                if (existingUser) {
+                    return false; // ID already exists
+                }
+                setRegisteredUsers(prevUsers => [...prevUsers, { ...user, id: user.id }]);
+                return true;
+            };
+
+            const showToastMessage = (message) => {
+                setShowToast({ message, visible: true });
+                setTimeout(() => {
+                    setShowToast(prev => ({ ...prev, visible: false }));
+                }, 3000);
+            };
+            
+            const renderMainContent = () => {
+                switch (page) {
+                    case 'landing':
+                        // Only show login button if there are registered users
+                        const hasRegisteredUsers = registeredUsers.length > 0;
+                        return <LandingPage onLoginClick={() => setShowLoginModal(true)} onRegisterClick={() => setPage('register')} hasRegisteredUsers={hasRegisteredUsers} />;
+                    case 'register':
+                        return <RegistrationPage onRegisterSuccess={() => { setPage('landing'); showToastMessage('회원가입이 완료되었습니다!'); }} onBack={() => setPage('landing')} onRegistration={handleRegistration} />;
+                    case 'main':
+                        return <MainAppContent onLogout={handleLogout} onAdminLogin={() => setShowAdminLoginModal(true)} currentUser={currentUser} judgments={judgments} registeredCases={registeredCases} />;
+                    case 'admin-dashboard':
+                         return <AdminDashboard onAdminExit={handleAdminExit} judgments={judgments} setJudgments={setJudgments} registeredCases={registeredCases} setRegisteredCases={setRegisteredCases} />;
+                    default:
+                        return <LandingPage onLoginClick={() => setShowLoginModal(true)} onRegisterClick={() => setPage('register')} hasRegisteredUsers={false} />;
+                }
+            };
+            
+            return (
+                <GlobalContext.Provider value={{ isDarkMode, setIsDarkMode }}>
+                    <div className="flex flex-col">
+                        {renderMainContent()}
+
+                        {/* Admin Login Modal */}
+                        {showAdminLoginModal && (
+                            <AdminLoginModal onLogin={handleAdminLogin} onClose={() => setShowAdminLoginModal(false)} />
+                        )}
+
+                        {/* User Login Modal */}
+                        {showLoginModal && (
+                            <LoginModal onLogin={handleLogin} onClose={() => setShowLoginModal(false)} isLoggingIn={isLoggingIn} />
+                        )}
+
+                        {/* Toast Message UI */}
+                        {showToast.visible && (
+                            <div className="fixed bottom-8 right-8 bg-black bg-opacity-70 text-white px-6 py-3 rounded-full shadow-lg transition-opacity duration-300">
+                                {showToast.message}
+                            </div>
+                        )}
+                    </div>
+                </GlobalContext.Provider>
+            );
+        };
+        
+        // Loading spinner component
+        const LoadingSpinner = () => (
+            <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+                <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 dark:border-blue-300"></div>
+            </div>
+        );
+
+        // Landing Page Component
+        const LandingPage = ({ onLoginClick, onRegisterClick, hasRegisteredUsers }) => (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-6 dark:from-gray-900 dark:to-gray-800 transition-colors">
+                <div className="bg-white dark:bg-gray-700 rounded-3xl shadow-2xl p-10 md:p-16 text-center w-full max-w-2xl transform transition-all duration-500 ease-in-out hover:scale-105">
+                    <h1 className="text-5xl md:text-6xl font-extrabold text-blue-900 dark:text-blue-200 mb-6">성화국 법원</h1>
+                    <div className="flex flex-col md:flex-row justify-center space-y-4 md:space-y-0 md:space-x-8">
+                        <button onClick={onLoginClick} className="w-full md:w-auto bg-blue-600 text-white font-bold py-4 px-12 rounded-full shadow-lg hover:bg-blue-700 transition-colors duration-300 transform hover:scale-110">
+                            로그인
+                        </button>
+                        {!hasRegisteredUsers && (
+                            <button onClick={onRegisterClick} className="w-full md:w-auto bg-gray-800 text-white font-bold py-4 px-12 rounded-full shadow-lg hover:bg-gray-900 transition-colors duration-300 transform hover:scale-110">
+                                회원가입
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+        
+        // Registration Page Component
+        const RegistrationPage = ({ onRegistration, onRegisterSuccess, onBack }) => {
+            const { isDarkMode } = useContext(GlobalContext);
+            const [id, setId] = useState('');
+            const [password, setPassword] = useState('');
+            const [confirmPassword, setConfirmPassword] = useState('');
+            const [name, setName] = useState('');
+            const [address, setAddress] = useState('');
+            const [error, setError] = useState('');
+            const [passwordMatch, setPasswordMatch] = useState(false);
+
+            useEffect(() => {
+                if (password && confirmPassword) {
+                    setPasswordMatch(password === confirmPassword);
+                } else {
+                    setPasswordMatch(false);
+                }
+            }, [password, confirmPassword]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                setError('');
+                if (!id || !password || !confirmPassword || !name || !address) {
+                    setError('모든 정보를 입력해주세요.');
+                    return;
+                }
+                
+                if (!passwordMatch) {
+                    setError('비밀번호가 일치하지 않습니다.');
+                    return;
+                }
+
+                const success = onRegistration({ id, password, name, address });
+                if (success) {
+                    onRegisterSuccess();
+                } else {
+                    setError('이미 존재하는 아이디입니다. 다른 아이디를 사용해주세요.');
+                }
+            };
+
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6 dark:from-gray-900 dark:to-gray-800 transition-colors">
+                    <div className="bg-white dark:bg-gray-700 rounded-3xl shadow-2xl p-10 md:p-16 w-full max-w-2xl">
+                        <h2 className="text-4xl font-bold text-gray-800 dark:text-gray-100 mb-8 text-center">회원가입</h2>
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            <div>
+                                <label htmlFor="id" className="block text-gray-600 dark:text-gray-300 font-medium mb-2">아이디</label>
+                                <input type="text" id="id" className="w-full p-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={id} onChange={(e) => setId(e.target.value)} />
+                            </div>
+                            <div className="relative">
+                                <label htmlFor="password" className="block text-gray-600 dark:text-gray-300 font-medium mb-2">비밀번호</label>
+                                <input type="password" id="password" className="w-full p-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={password} onChange={(e) => setPassword(e.target.value)} />
+                            </div>
+                            <div className="relative">
+                                <label htmlFor="confirmPassword" className="block text-gray-600 dark:text-gray-300 font-medium mb-2">비밀번호 확인</label>
+                                <input type="password" id="confirmPassword" className="w-full p-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+                                {confirmPassword.length > 0 && (
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                        {passwordMatch ? (
+                                            <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                        ) : (
+                                            <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label htmlFor="name" className="block text-gray-600 dark:text-gray-300 font-medium mb-2">이름</label>
+                                <input type="text" id="name" className="w-full p-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={name} onChange={(e) => setName(e.target.value)} />
+                            </div>
+                            <div>
+                                <label htmlFor="address" className="block text-gray-600 dark:text-gray-300 font-medium mb-2">주소</label>
+                                <input type="text" id="address" className="w-full p-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={address} onChange={(e) => setAddress(e.target.value)} />
+                            </div>
+                            {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
+                            <div className="flex justify-end space-x-4 pt-4">
+                                <button type="button" onClick={onBack} className="bg-gray-200 text-gray-700 font-bold px-8 py-3 rounded-full shadow-md hover:bg-gray-300 transition-colors dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">
+                                    뒤로가기
+                                </button>
+                                <button type="submit" className="bg-blue-600 text-white font-bold px-8 py-3 rounded-full shadow-md hover:bg-blue-700 transition-colors">
+                                    가입하기
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+        
+        // User Login Modal
+        const LoginModal = ({ onLogin, onClose, isLoggingIn }) => {
+            const [id, setId] = useState('');
+            const [password, setPassword] = useState('');
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onLogin({ id, password });
+            };
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white dark:bg-gray-700 rounded-2xl shadow-xl p-8 w-full max-w-sm relative">
+                        {isLoggingIn && <LoadingSpinner />}
+                        <h3 className="text-2xl font-bold text-blue-800 dark:text-blue-200 mb-6 text-center">로그인</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label htmlFor="loginId" className="block text-gray-600 dark:text-gray-300 font-medium mb-1">아이디</label>
+                                <input type="text" id="loginId" className="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={id} onChange={(e) => setId(e.target.value)} required />
+                            </div>
+                            <div>
+                                <label htmlFor="loginPassword" className="block text-gray-600 dark:text-gray-300 font-medium mb-1">비밀번호</label>
+                                <input type="password" id="loginPassword" className="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                            </div>
+                            <div className="flex justify-end space-x-4 pt-4">
+                                <button type="button" onClick={onClose} className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors shadow-md dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">취소</button>
+                                <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md">로그인</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+        
+        // Admin Login Modal
+        const AdminLoginModal = ({ onLogin, onClose }) => {
+            const [id, setId] = useState('');
+            const [password, setPassword] = useState('');
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onLogin({ id, password });
+            };
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white dark:bg-gray-700 rounded-2xl shadow-xl p-8 w-full max-w-sm relative">
+                        <h3 className="text-2xl font-bold text-red-800 dark:text-red-300 mb-6 text-center">관리자 로그인</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label htmlFor="adminId" className="block text-gray-600 dark:text-gray-300 font-medium mb-1">아이디</label>
+                                <input type="text" id="adminId" className="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={id} onChange={(e) => setId(e.target.value)} required />
+                            </div>
+                            <div>
+                                <label htmlFor="adminPassword" className="block text-gray-600 dark:text-gray-300 font-medium mb-1">비밀번호</label>
+                                <input type="password" id="adminPassword" className="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                            </div>
+                            <div className="flex justify-end space-x-4 pt-4">
+                                <button type="button" onClick={onClose} className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors shadow-md dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">취소</button>
+                                <button type="submit" className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-md">로그인</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+        
+        // MainAppContent Component: Main page after login
+        const MainAppContent = ({ onLogout, onAdminLogin, currentUser, judgments, registeredCases }) => {
+            const [currentPage, setCurrentPage] = useState('welcome');
+            const [logoClickCount, setLogoClickCount] = useState(0);
+            const [lastClickTime, setLastClickTime] = useState(0);
+            const [selectedJudgmentId, setSelectedJudgmentId] = useState(null);
+            
+            const handleLogoClick = () => {
+                const now = Date.now();
+                if (now - lastClickTime < 500) {
+                    setLogoClickCount(prev => prev + 1);
+                } else {
+                    setLogoClickCount(1);
+                }
+                setLastClickTime(now);
+
+                if (logoClickCount + 1 >= 5) {
+                    onAdminLogin();
+                    setLogoClickCount(0);
+                }
+            };
+            
+            const handleNavigationClick = (page) => {
+                setCurrentPage(page);
+                setSelectedJudgmentId(null);
+            };
+
+            // Header Component
+            const Header = ({ onNavClick, currentPage, onLogout, currentUser, onLogoClick, isAdminMode }) => {
+                const { isDarkMode, setIsDarkMode } = useContext(GlobalContext);
+                const [isMenuOpen, setIsMenuOpen] = useState(false);
+                const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
+                const getButtonClasses = (page) => `py-2 px-4 rounded-lg font-medium transition duration-300 ${
+                    currentPage === page ? 'bg-blue-600 text-white shadow-md' : 'text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
+                }`;
+                const navItems = [
+                    { name: '홈', page: 'welcome' },
+                    { name: '판결문 공개', page: 'judgment-disclosure' },
+                    { name: '재판 일정', page: 'trial-schedule' },
+                    { name: '나의 사건 검색', page: 'my-case-search' }
+                ];
+                
+                return (
+                    <header className="bg-white dark:bg-gray-800 shadow-lg p-4 md:p-6 rounded-b-2xl mb-8 flex flex-col md:flex-row justify-between items-center fixed w-full top-0 z-50 transition-colors">
+                        <div className="flex justify-between items-center w-full md:w-auto">
+                            <div className="flex items-center">
+                                <span onClick={onLogoClick} className="text-3xl font-bold text-blue-800 dark:text-blue-200 tracking-tight cursor-pointer">성화국 법원</span>
+                            </div>
+                            <div className="flex items-center md:hidden">
+                                <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 ml-2 text-gray-800 dark:text-gray-200 focus:outline-none">
+                                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <nav className={`flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-4 mt-4 md:mt-0 ${isMenuOpen ? 'flex' : 'hidden'} md:flex w-full md:w-auto md:flex-grow md:justify-center`}>
+                            {navItems.map(item => (
+                                <button key={item.page} onClick={() => onNavClick(item.page)} className={getButtonClasses(item.page)}>
+                                    {item.name}
+                                </button>
+                            ))}
+                        </nav>
+                        <div className={`flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-4 mt-4 md:mt-0 ${isMenuOpen ? 'flex' : 'hidden'} md:flex w-full md:w-auto md:justify-end`}>
+                            
+                            {/* Logged-in user info and logout button */}
+                            <div className="relative">
+                                <button onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)} className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-full p-2 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                                    <svg className="w-8 h-8 text-blue-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                    </svg>
+                                    <span className="hidden md:inline-block font-medium text-gray-800 dark:text-gray-100">{currentUser.name}</span>
+                                    <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                {isProfileMenuOpen && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-700 rounded-lg shadow-xl z-50">
+                                        <div className="p-4 border-b border-gray-200 dark:border-gray-600">
+                                            <p className="text-sm font-semibold text-gray-800 dark:text-white">{currentUser.name}</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">{currentUser.id}</p>
+                                        </div>
+                                        <div className="py-1">
+                                            {/* Dark/Light mode toggle button with text only */}
+                                            <button onClick={() => { setIsDarkMode(!isDarkMode); setIsProfileMenuOpen(false); }} className="flex items-center space-x-2 w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600">
+                                                <span className="ml-2">{isDarkMode ? '라이트 모드' : '다크 모드'}</span>
+                                            </button>
+                                            <button onClick={() => { onLogout(); setIsProfileMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600">
+                                                로그아웃
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+                );
+            };
+
+            // Welcome Page Component
+            const WelcomePage = ({ currentUser, onNavClick }) => (
+                <main className="container mx-auto p-8 pt-24 flex-grow">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 text-center mb-8">
+                        <h2 className="text-4xl md:text-5xl font-bold text-blue-800 dark:text-blue-200 mb-4">환영합니다, {currentUser.name}님!</h2>
+                        <p className="text-lg text-gray-700 dark:text-gray-300">성화국 법원 온라인 서비스에 오신 것을 환영합니다. 필요한 정보를 찾아보세요.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {/* Section 1: Judgment Disclosure */}
+                        <div 
+                            onClick={() => onNavClick('judgment-disclosure')}
+                            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 cursor-pointer hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
+                        >
+                            <div className="flex justify-center mb-4">
+                                <svg className="w-16 h-16 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-2xl font-bold text-center text-gray-800 dark:text-gray-100">판결문, 결정문 보기</h3>
+                            <p className="text-center text-gray-600 dark:text-gray-400 mt-2">최신 판결 및 결정문을 열람하세요.</p>
+                        </div>
+                        {/* Section 2: Today's Trial */}
+                        <div 
+                            onClick={() => onNavClick('trial-schedule')}
+                            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 cursor-pointer hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
+                        >
+                            <div className="flex justify-center mb-4">
+                                <svg className="w-16 h-16 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h.01M7 12h.01M7 16h.01M16 12h.01M17 16h.01M14 16h.01M12 21h8a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2h4zm4-4h.01" />
+                                </svg>
+                            </div>
+                            <h3 className="text-2xl font-bold text-center text-gray-800 dark:text-gray-100">오늘의 재판</h3>
+                            <p className="text-center text-gray-600 dark:text-gray-400 mt-2">오늘 진행되는 재판 일정을 확인하세요.</p>
+                        </div>
+                        {/* Section 3: My Case Search */}
+                        <div 
+                            onClick={() => onNavClick('my-case-search')}
+                            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 cursor-pointer hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
+                        >
+                            <div className="flex justify-center mb-4">
+                                <svg className="w-16 h-16 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                </svg>
+                            </div>
+                            <h3 className="text-2xl font-bold text-center text-gray-800 dark:text-gray-100">나의 사건 보기</h3>
+                            <p className="text-center text-gray-600 dark:text-gray-400 mt-2">내 사건의 진행 상황을 조회하세요.</p>
+                        </div>
+                    </div>
+                </main>
+            );
+
+            // Judgment Disclosure Component
+            const JudgmentDisclosure = ({ judgments, onSelectJudgment }) => {
+                const { isDarkMode } = useContext(GlobalContext);
+                const [filter, setFilter] = useState('');
+                const [sortOrder, setSortOrder] = useState('desc');
+                const [caseTypeFilter, setCaseTypeFilter] = useState('');
+                const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+                const filterButtonRef = useRef(null);
+
+                const handleSortChange = (e) => {
+                    setSortOrder(e.target.value);
+                };
+
+                const handleCaseTypeFilter = (type) => {
+                    setCaseTypeFilter(type);
+                    setShowFilterDropdown(false);
+                };
+
+                useEffect(() => {
+                    const handleClickOutside = (event) => {
+                        if (filterButtonRef.current && !filterButtonRef.current.contains(event.target)) {
+                            setShowFilterDropdown(false);
+                        }
+                    };
+                    document.addEventListener('mousedown', handleClickOutside);
+                    return () => {
+                        document.removeEventListener('mousedown', handleClickOutside);
+                    };
+                }, []);
+
+
+                const filteredJudgments = judgments.filter(j => 
+                    (j.title.includes(filter) || j.caseNumber.includes(filter) || j.content.includes(filter)) &&
+                    (caseTypeFilter === '' || j.caseType === caseTypeFilter)
+                ).sort((a, b) => {
+                    if (sortOrder === 'desc') {
+                        return b.id - a.id;
+                    }
+                    return a.id - b.id;
+                });
+
+                return (
+                    <main className="container mx-auto p-8 pt-24 flex-grow">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+                            <h2 className="text-4xl font-bold text-blue-800 dark:text-blue-200 mb-6">판결문 공개</h2>
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 space-y-4 md:space-y-0 md:space-x-4">
+                                <input
+                                    type="text"
+                                    placeholder="판결문 제목 또는 사건번호 검색..."
+                                    value={filter}
+                                    onChange={(e) => setFilter(e.target.value)}
+                                    className="w-full p-3 border-2 border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 transition-all"
+                                />
+                                <div className="flex items-center space-x-2 relative">
+                                    <div ref={filterButtonRef} className="relative">
+                                        <button
+                                            onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                                            className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-3 rounded-lg shadow-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                                        >
+                                            필터
+                                        </button>
+                                        {showFilterDropdown && (
+                                            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-700 rounded-lg shadow-xl z-50">
+                                                <button onClick={() => handleCaseTypeFilter('')} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600">모두 보기</button>
+                                                <button onClick={() => handleCaseTypeFilter('형사재판')} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600">형사재판</button>
+                                                <button onClick={() => handleCaseTypeFilter('민사재판')} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600">민사재판</button>
+                                                <button onClick={() => handleCaseTypeFilter('헌법재판')} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600">헌법재판</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="relative">
+                                        <select
+                                            value={sortOrder}
+                                            onChange={handleSortChange}
+                                            className="block appearance-none w-full bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100 py-3 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-white dark:focus:bg-gray-600 focus:border-gray-500"
+                                        >
+                                            <option value="desc">최신순</option>
+                                            <option value="asc">오래된순</option>
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-200">
+                                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15 10l-5-5-.707.707L12.586 9H4v2h8.586l-3.293 3.293z"/></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                {filteredJudgments.length > 0 ? (
+                                    filteredJudgments.map(j => (
+                                        <div 
+                                            key={j.id} 
+                                            onClick={() => onSelectJudgment(j.id)}
+                                            className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-md cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-600 transition-colors"
+                                        >
+                                            <h3 className="text-xl font-semibold text-blue-700 dark:text-blue-300 mb-2">{j.title}</h3>
+                                            <p className="text-gray-600 dark:text-gray-400 mb-1">사건번호: {j.caseNumber}</p>
+                                            <p className="text-gray-500 dark:text-gray-500 text-sm">{j.content.substring(0, 150)}...</p>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center text-gray-500 dark:text-gray-400">등록된 판결문이 없습니다.</div>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+                );
+            };
+
+            // Judgment Detail Component
+            const JudgmentDetail = ({ judgment, onBack }) => {
+                const { isDarkMode } = useContext(GlobalContext);
+
+                return (
+                    <main className="container mx-auto p-8 pt-24 flex-grow">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+                            <button onClick={onBack} className="flex items-center text-blue-600 dark:text-blue-400 mb-6 font-medium hover:underline">
+                                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                뒤로가기
+                            </button>
+                            <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-4">{judgment.title}</h2>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">사건번호: {judgment.caseNumber}</p>
+                            <div className="prose max-w-none text-gray-700 dark:text-gray-300 leading-relaxed">
+                                <p dangerouslySetInnerHTML={renderFormattedText(judgment.content)}></p>
+                            </div>
+                        </div>
+                    </main>
+                );
+            };
+
+            // Trial Schedule Page Component
+            const TrialSchedule = () => {
+                const { isDarkMode } = useContext(GlobalContext);
+                const [currentDate, setCurrentDate] = useState(new Date());
+                const [scheduleData, setScheduleData] = useState(() => {
+                    const savedSchedule = localStorage.getItem('trialSchedule');
+                    return savedSchedule ? JSON.parse(savedSchedule) : {};
+                });
+
+                const renderCalendar = () => {
+                    const year = currentDate.getFullYear();
+                    const month = currentDate.getMonth();
+                    const firstDay = new Date(year, month, 1).getDay();
+                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+                    const days = [];
+                    const today = new Date();
+                    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+                    for (let i = 0; i < firstDay; i++) {
+                        days.push(<div key={`empty-${i}`} className="calendar-day-cell"></div>);
+                    }
+
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        const daySchedule = scheduleData[dateString] || '';
+                        
+                        days.push(
+                            <div 
+                                key={day} 
+                                className={`calendar-day-cell ${dateString === todayString ? 'today-cell' : ''}`}
+                            >
+                                <div className="calendar-day-content">
+                                    <span className="calendar-day-number">{day}</span>
+                                    <span className="text-lg font-medium text-gray-500 dark:text-gray-400 overflow-hidden break-words whitespace-pre-wrap">{daySchedule}</span>
+                                </div>
+                            </div>
+                        );
+                    }
+                    return days;
+                };
+
+                const changeMonth = (offset) => {
+                    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
+                };
+
+                return (
+                    <main className="container mx-auto p-8 pt-24 flex-grow">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+                            <h2 className="text-4xl font-bold text-blue-800 dark:text-blue-200 mb-6">재판 일정</h2>
+                            <div className="flex justify-between items-center mb-6">
+                                <button onClick={() => changeMonth(-1)} className="p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors shadow-sm">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                </button>
+                                <h3 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">{currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월</h3>
+                                <button onClick={() => changeMonth(1)} className="p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors shadow-sm">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-7 gap-2">
+                                {['일', '월', '화', '수', '목', '금', '토'].map(day => (
+                                    <div key={day} className="text-center font-bold text-sm text-gray-600 dark:text-gray-400">{day}</div>
+                                ))}
+                                {renderCalendar()}
+                            </div>
+                        </div>
+                    </main>
+                );
+            };
+
+            // My Case Search Component
+            const MyCaseSearch = ({ currentUser, registeredCases }) => {
+                const { isDarkMode } = useContext(GlobalContext);
+                const [caseCode, setCaseCode] = useState('');
+                const [searchResult, setSearchResult] = useState(null);
+                const [errorMessage, setErrorMessage] = useState('');
+                
+                const handleSearch = (e) => {
+                    e.preventDefault();
+                    setErrorMessage('');
+                    const foundCase = registeredCases.find(c => 
+                        c.caseCode === caseCode && c.clientName === currentUser.name
+                    );
+                    if (foundCase) {
+                        setSearchResult(foundCase);
+                    } else {
+                        setSearchResult(null);
+                        setErrorMessage('해당 사건 정보를 찾을 수 없습니다.');
+                    }
+                };
+
+                return (
+                    <main className="container mx-auto p-8 pt-24 flex-grow">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+                            <h2 className="text-4xl font-bold text-blue-800 dark:text-blue-200 mb-6">나의 사건 검색</h2>
+                            <form onSubmit={handleSearch} className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 mb-6">
+                                <input
+                                    type="text"
+                                    placeholder="사건번호를 입력하세요..."
+                                    value={caseCode}
+                                    onChange={(e) => setCaseCode(e.target.value)}
+                                    className="w-full p-3 border-2 border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 transition-all"
+                                />
+                                <button type="submit" className="w-full md:w-1/3 bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors shadow-md">
+                                    검색
+                                </button>
+                            </form>
+
+                            {errorMessage && <div className="text-red-500 text-center mb-4">{errorMessage}</div>}
+
+                            {searchResult && (
+                                <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-md">
+                                    <h3 className="text-2xl font-bold text-blue-700 dark:text-blue-300 mb-2">{searchResult.caseName}</h3>
+                                    <p className="text-gray-600 dark:text-gray-400 mb-1">사건번호: {searchResult.caseCode}</p>
+                                    <p className="text-gray-600 dark:text-gray-400">사건 내용: {searchResult.description}</p>
+                                    <p className="text-gray-600 dark:text-gray-400 mt-4">진행 상황: <span className="font-semibold">{searchResult.status}</span></p>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+                );
+            };
+
+            const renderPage = () => {
+                switch (currentPage) {
+                    case 'welcome':
+                        return <WelcomePage currentUser={currentUser} onNavClick={handleNavigationClick} />;
+                    case 'judgment-disclosure':
+                        return <JudgmentDisclosure judgments={judgments} onSelectJudgment={(id) => { setSelectedJudgmentId(id); setCurrentPage('judgment-detail'); }} />;
+                    case 'judgment-detail':
+                        const selectedJudgment = judgments.find(j => j.id === selectedJudgmentId);
+                        return selectedJudgment ? (
+                            <JudgmentDetail judgment={selectedJudgment} onBack={() => setCurrentPage('judgment-disclosure')} />
+                        ) : null;
+                    case 'trial-schedule':
+                        return <TrialSchedule />;
+                    case 'my-case-search':
+                        return <MyCaseSearch currentUser={currentUser} registeredCases={registeredCases} />;
+                    default:
+                        return <WelcomePage currentUser={currentUser} />;
+                }
+            };
+            
+            return (
+                <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+                    <Header 
+                        onNavClick={handleNavigationClick} 
+                        currentPage={currentPage}
+                        onLogout={onLogout}
+                        currentUser={currentUser}
+                        onLogoClick={handleLogoClick}
+                    />
+                    <div className="flex-grow pt-24">
+                        {renderPage()}
+                    </div>
+                    <Footer />
+                </div>
+            );
+        };
+
+        // Admin Dashboard Component
+        const AdminDashboard = ({ onAdminExit, judgments, setJudgments, registeredCases, setRegisteredCases }) => {
+            const { isDarkMode } = useContext(GlobalContext);
+            const [currentPage, setCurrentPage] = useState('main'); // 'main', 'edit-judgment', 'edit-case'
+            const [editingJudgment, setEditingJudgment] = useState(null);
+            const [editingCase, setEditingCase] = useState(null);
+            
+            // Judgment and decision registration/editing component
+            const JudgmentForm = ({ judgmentToEdit, setJudgments, onSave }) => {
+                const [caseType, setCaseType] = useState(judgmentToEdit?.caseType || '형사재판');
+                const [form, setForm] = useState(judgmentToEdit || {
+                    title: '',
+                    caseNumber: '',
+                    caseType: '형사재판',
+                    defendant: '',
+                    plaintiff: '',
+                    petitioner: '',
+                    respondent: '',
+                    content: '',
+                    link: ''
+                });
+
+                const handleChange = (e) => {
+                    const { name, value } = e.target;
+                    setForm(prev => ({ ...prev, [name]: value }));
+                };
+
+                const handleCaseTypeChange = (e) => {
+                    const { value } = e.target;
+                    setCaseType(value);
+                    setForm(prev => ({ ...prev, caseType: value }));
+                };
+
+                const handleSubmit = (e) => {
+                    e.preventDefault();
+                    if (judgmentToEdit) {
+                        setJudgments(prev => prev.map(j => j.id === judgmentToEdit.id ? { ...form, id: j.id } : j));
+                        onSave();
+                    } else {
+                        setJudgments(prev => [...prev, { ...form, id: Date.now() }]);
+                        setForm({
+                            title: '', caseNumber: '', caseType: '형사재판', defendant: '', plaintiff: '', petitioner: '', respondent: '', content: '', link: ''
+                        });
+                    }
+                };
+
+                return (
+                    <section className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md mb-8">
+                        <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{judgmentToEdit ? '판결문 및 결정문 편집' : '판결문 및 결정문 등록'}</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">제목</label>
+                                <input type="text" name="title" value={form.title} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">사건번호</label>
+                                <input type="text" name="caseNumber" value={form.caseNumber} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">재판 종류</label>
+                                <select name="caseType" value={caseType} onChange={handleCaseTypeChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                    <option value="형사재판">형사재판</option>
+                                    <option value="민사재판">민사재판</option>
+                                    <option value="헌법재판">헌법재판</option>
+                                </select>
+                            </div>
+                            {caseType === '형사재판' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피고인</label>
+                                    <input type="text" name="defendant" value={form.defendant} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                </div>
+                            )}
+                            {caseType === '민사재판' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">원고</label>
+                                        <input type="text" name="plaintiff" value={form.plaintiff} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피고</label>
+                                        <input type="text" name="defendant" value={form.defendant} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                </>
+                            )}
+                            {caseType === '헌법재판' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">청구인</label>
+                                        <input type="text" name="petitioner" value={form.petitioner} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피청구인</label>
+                                        <input type="text" name="respondent" value={form.respondent} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                </>
+                            )}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">판결문 및 결정문 내용</label>
+                                <textarea name="content" value={form.content} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm h-48 dark:bg-gray-700 dark:border-gray-600 dark:text-white" required></textarea>
+                                <p className="text-xs text-gray-500 mt-1">**텍스트**로 굵은 글씨를, 엔터로 줄바꿈을 할 수 있습니다.</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">링크</label>
+                                <input type="text" name="link" value={form.link} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                            </div>
+                            <div className="flex justify-end space-x-4">
+                                {judgmentToEdit && (
+                                    <button type="button" onClick={() => onSave()} className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors shadow-md dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">취소</button>
+                                )}
+                                <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md">{judgmentToEdit ? '수정 완료' : '등록'}</button>
+                            </div>
+                        </form>
+                    </section>
+                );
+            };
+
+            // Trial Schedule Edit Component (Admin)
+            const ScheduleEdit = () => {
+                const { isDarkMode } = useContext(GlobalContext);
+                const [currentDate, setCurrentDate] = useState(new Date());
+                const [scheduleData, setScheduleData] = useState(() => {
+                    const savedSchedule = localStorage.getItem('trialSchedule');
+                    return savedSchedule ? JSON.parse(savedSchedule) : {};
+                });
+                
+                useEffect(() => {
+                    localStorage.setItem('trialSchedule', JSON.stringify(scheduleData));
+                }, [scheduleData]);
+
+                const handleScheduleChange = (date, value) => {
+                    setScheduleData(prev => ({ ...prev, [date]: value }));
+                };
+
+                const renderCalendar = () => {
+                    const year = currentDate.getFullYear();
+                    const month = currentDate.getMonth();
+                    const firstDay = new Date(year, month, 1).getDay();
+                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+                    const days = [];
+                    const today = new Date();
+                    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+                    for (let i = 0; i < firstDay; i++) {
+                        days.push(<div key={`empty-${i}`} className="calendar-day-cell"></div>);
+                    }
+
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        const daySchedule = scheduleData[dateString] || '';
+                        
+                        days.push(
+                            <div key={day} className={`calendar-day-cell ${dateString === todayString ? 'today-cell' : ''}`}>
+                                <div className="calendar-day-content">
+                                    <span className="calendar-day-number">{day}</span>
+                                    <textarea
+                                        className="calendar-day-textarea"
+                                        value={daySchedule}
+                                        onChange={(e) => handleScheduleChange(dateString, e.target.value)}
+                                        placeholder="일정 입력"
+                                    />
+                                </div>
+                            </div>
+                        );
+                    }
+                    return days;
+                };
+
+                const changeMonth = (offset) => {
+                    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
+                };
+
+                return (
+                    <section className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md mb-8">
+                        <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">재판 일정 수정</h3>
+                        <div className="flex justify-between items-center mb-6">
+                            <button onClick={() => changeMonth(-1)} className="p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors shadow-sm">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                            </button>
+                            <h4 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">{currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월</h4>
+                            <button onClick={() => changeMonth(1)} className="p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors shadow-sm">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-7 gap-2">
+                            {['일', '월', '화', '수', '목', '금', '토'].map(day => (
+                                <div key={day} className="text-center font-bold text-sm text-gray-600 dark:text-gray-400">{day}</div>
+                            ))}
+                            {renderCalendar()}
+                        </div>
+                    </section>
+                );
+            };
+
+            // Case Registration Component
+            const CaseRegistration = ({ caseToEdit, setRegisteredCases, onSave }) => {
+                const [caseType, setCaseType] = useState(caseToEdit?.caseType || '형사재판');
+                const [form, setForm] = useState(caseToEdit || {
+                    title: '',
+                    caseNumber: '',
+                    caseType: '형사재판',
+                    defendant: '',
+                    defendantAddress: '',
+                    plaintiff: '',
+                    plaintiffAddress: '',
+                    petitioner: '',
+                    petitionerAddress: '',
+                    respondent: '',
+                    respondentAddress: '',
+                    status: '' // Add status field
+                });
+
+                const handleChange = (e) => {
+                    const { name, value } = e.target;
+                    setForm(prev => ({ ...prev, [name]: value }));
+                };
+
+                const handleCaseTypeChange = (e) => {
+                    const { value } = e.target;
+                    setCaseType(value);
+                    setForm(prev => ({ ...prev, caseType: value }));
+                };
+
+                const handleSubmit = (e) => {
+                    e.preventDefault();
+                    if (caseToEdit) {
+                        setRegisteredCases(prev => prev.map(c => c.caseCode === caseToEdit.caseCode ? { ...form, id: c.id } : c));
+                        onSave();
+                    } else {
+                         setRegisteredCases(prev => [...prev, {
+                            caseName: form.title,
+                            caseCode: form.caseNumber,
+                            caseType: form.caseType,
+                            clientName: form.plaintiff || form.petitioner || form.defendant,
+                            defendant: form.defendant,
+                            defendantAddress: form.defendantAddress,
+                            plaintiff: form.plaintiff,
+                            plaintiffAddress: form.plaintiffAddress,
+                            petitioner: form.petitioner,
+                            petitionerAddress: form.petitionerAddress,
+                            respondent: form.respondent,
+                            respondentAddress: form.respondentAddress,
+                            status: form.status,
+                            id: Date.now()
+                        }]);
+                        setForm({
+                            title: '', caseNumber: '', caseType: '형사재판', defendant: '', defendantAddress: '', plaintiff: '', plaintiffAddress: '', petitioner: '', petitionerAddress: '', respondent: '', respondentAddress: '', status: ''
+                        });
+                    }
+                };
+
+                return (
+                    <section className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md mb-8">
+                        <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{caseToEdit ? '사건 편집' : '사건 등록'}</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">제목</label>
+                                <input type="text" name="title" value={form.title} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">사건번호</label>
+                                <input type="text" name="caseNumber" value={form.caseNumber} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">재판 종류</label>
+                                <select name="caseType" value={caseType} onChange={handleCaseTypeChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                    <option value="형사재판">형사재판</option>
+                                    <option value="민사재판">민사재판</option>
+                                    <option value="헌법재판">헌법재판</option>
+                                </select>
+                            </div>
+                            {caseType === '형사재판' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피고인</label>
+                                        <input type="text" name="defendant" value={form.defendant} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피고인 주소</label>
+                                        <input type="text" name="defendantAddress" value={form.defendantAddress} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                </>
+                            )}
+                            {caseType === '민사재판' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">원고</label>
+                                        <input type="text" name="plaintiff" value={form.plaintiff} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">원고 주소</label>
+                                        <input type="text" name="plaintiffAddress" value={form.plaintiffAddress} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피고</label>
+                                        <input type="text" name="defendant" value={form.defendant} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피고 주소</label>
+                                        <input type="text" name="defendantAddress" value={form.defendantAddress} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                </>
+                            )}
+                            {caseType === '헌법재판' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">청구인</label>
+                                        <input type="text" name="petitioner" value={form.petitioner} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">청구인 주소</label>
+                                        <input type="text" name="petitionerAddress" value={form.petitionerAddress} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피청구인</label>
+                                        <input type="text" name="respondent" value={form.respondent} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">피청구인 주소</label>
+                                        <input type="text" name="respondentAddress" value={form.respondentAddress} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                    </div>
+                                </>
+                            )}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">상태</label>
+                                <input type="text" name="status" value={form.status} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                            </div>
+                            <div className="flex justify-end space-x-4">
+                                {caseToEdit && (
+                                    <button type="button" onClick={() => onSave()} className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors shadow-md dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">취소</button>
+                                )}
+                                <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md">{caseToEdit ? '수정 완료' : '사건 등록'}</button>
+                            </div>
+                        </form>
+                    </section>
+                );
+            };
+
+            const AdminMain = () => (
+                <main className="container mx-auto p-8 pt-24 flex-grow">
+                    <JudgmentForm setJudgments={setJudgments} />
+                    <section className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md mb-8">
+                        <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">판결문 목록</h3>
+                        <ul className="space-y-4">
+                            {judgments.map(j => (
+                                <li key={j.id} className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm flex justify-between items-center">
+                                    <div>
+                                        <h4 className="font-semibold text-gray-800 dark:text-gray-100">{j.title}</h4>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">{j.caseNumber}</p>
+                                    </div>
+                                    <button onClick={() => { setEditingJudgment(j); setCurrentPage('edit-judgment'); }} className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition-colors shadow-md">
+                                        편집
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                    <ScheduleEdit />
+                    <CaseRegistration setRegisteredCases={setRegisteredCases} />
+                    <section className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md mb-8">
+                        <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">사건 목록</h3>
+                        <ul className="space-y-4">
+                            {registeredCases.map(c => (
+                                <li key={c.id} className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm flex justify-between items-center">
+                                    <div>
+                                        <h4 className="font-semibold text-gray-800 dark:text-gray-100">{c.caseName}</h4>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">{c.caseCode} | {c.status}</p>
+                                    </div>
+                                    <button onClick={() => { setEditingCase(c); setCurrentPage('edit-case'); }} className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition-colors shadow-md">
+                                        편집
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                </main>
+            );
+
+            const renderAdminPage = () => {
+                switch (currentPage) {
+                    case 'main':
+                        return <AdminMain />;
+                    case 'edit-judgment':
+                        return <JudgmentForm judgmentToEdit={editingJudgment} setJudgments={setJudgments} onSave={() => setCurrentPage('main')} />;
+                    case 'edit-case':
+                        return <CaseRegistration caseToEdit={editingCase} setRegisteredCases={setRegisteredCases} onSave={() => setCurrentPage('main')} />;
+                    default:
+                        return <AdminMain />;
+                }
+            };
+
+            return (
+                <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+                    {/* Admin Header */}
+                    <header className="bg-red-700 text-white shadow-lg p-4 md:p-6 rounded-b-2xl mb-8 flex justify-between items-center fixed w-full top-0 z-50 transition-colors">
+                        <h1 className="text-3xl font-bold tracking-tight">관리자 대시보드</h1>
+                        <button onClick={onAdminExit} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors shadow-md">
+                            완료
+                        </button>
+                    </header>
+                    <div className="flex-grow pt-24">
+                        {renderAdminPage()}
+                    </div>
+                    <Footer />
+                </div>
+            );
+        };
+        
+        // App rendering
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+    </script>
+</body>
+</html>
